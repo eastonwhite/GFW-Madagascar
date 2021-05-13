@@ -1,0 +1,727 @@
+---
+editor_options:
+  chunk_output_type: console
+fontsize: 12pt
+geometry: margin=1in
+header-includes: \usepackage{float} \usepackage{lineno} \usepackage{setspace}
+  \usepackage[round]{natbib} \bibpunct[; ]{(}{)}{,}{a}{}{,} \usepackage{color} \usepackage{totcount}
+  \newtotcounter{citenum} \def\oldcite{} \let\oldcite=\bibcite \def\bibcite{\stepcounter{citenum}\oldcite}
+  \usepackage{fancyhdr} \pagestyle{fancy} \fancyhf{} \fancyfoot[LE,LO]{\textcolor{red}{Preprint
+  - This work has not yet been peer-reviewed}} \fancyfoot[RE,RO]{\thepage} \renewcommand{\headrulewidth}{0pt}
+output:
+  pdf_document:
+    fig_caption: true
+    keep_tex: yes
+    number_sections: no
+  word_document: default
+  html_document:
+    df_print: paged
+---
+
+
+
+
+\begin{center}
+\textbf{\Large Distant water industrial fishing in developing countries: A case study of Madagascar}
+\vspace{5 mm}
+	
+\textsc{Easton R. White$^{1,2,*}$, Merrill Baker-Médard$^3$, Valeriia Vakhitova$^3$, Samantha Farquhar$^4$, Tendro Tondrasoa Ramaharitra$^5$}
+\vspace{3 mm}
+
+\small{$^1$Department of Biological Sciences, University of New Hampshire, Durham, New Hampshire, USA \\
+$^2$Gund Institute for Environment, University of Vermont, Burlington, Vermont, USA \\
+$^3$Environmental Studies Program, Middlebury College, Middlebury, Vermont, USA \\
+$^4$Integrated Coastal Sciences, East Carolina University, Greenville, North Carolina, USA \\
+$^5$Department of Natural Science, State College of Florida Manatee-Sarasota, Bradenton, Florida, USA
+}
+
+
+$\text{*}$ Corresponding author: Easton.White@unh.edu
+\end{center}
+
+\vspace{3 mm}
+
+\tableofcontents
+
+```{r load_packages,echo=F,warning=F,message=F}
+if (!require("pacman",character.only = TRUE))
+  {
+    install.packages("pacman",dep=TRUE)
+    if(!require("pacman",character.only = TRUE)) stop("Package not found")
+  }
+
+# Keeping below source for github package. Ask Easton whether pacman works for github packages or not.
+#devtools::install_github("rensa/stickylabeller")
+pacman::p_load(patchwork, dplyr, tidyr, ggplot2, ggrepel, viridis, usmap, stargazer,tidyquant,ggpubr,gridExtra, scales,kableExtra,countrycode,ggimage)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,message = FALSE,warning = FALSE,cache=TRUE)
+```
+
+\clearpage
+
+# Manuscript figures
+
+```{r covariates,eval=T,echo=F,results='asis',warning=FALSE,message=FALSE,error=FALSE}
+
+covariates <- read.csv(file='cleaned_data/covariates_table.csv',header=T,colClasses = rep('character',4))
+
+require(knitr)
+require(kableExtra)
+
+kable(covariates,"latex", booktabs = T,caption = "Explanatory variables used as fixed effects in models of industrial fishing effort from 2012-2020 around Madagascar.\\label{tab:covariates}") %>%
+  kable_styling(full_width = T,latex_options = c("striped","HOLD_position"),font_size=10) 
+
+```
+
+\clearpage
+
+```{r, fig.width=5.5,fig.cap = 'Total fishing effort (in hours) for the entire Madagascar EEZ from 2012-2020 by flag state \\label{fig:flagstate}'}
+mad <- read.table(file='cleaned_data/Madagascar_GFW_fishing_effort.csv',header=T,row.names = NULL,sep=';')
+
+require(forcats)
+ordering <- mad %>%
+  mutate(flag_gfw = as.factor(flag_gfw)) %>%
+  filter(is.na(flag_gfw)==F) %>%
+  group_by(flag_gfw) %>%
+  summarize(total_effort = sum(fishing_hours) , total_vessels = length(unique(mmsi))) %>% arrange(total_effort)
+
+
+effort_by_flag <- mad %>%
+  mutate(flag_gfw = as.factor(flag_gfw),vessel_class_gfw=as.factor(vessel_class_gfw)) %>%
+  filter(is.na(flag_gfw)==F) %>%
+  group_by(flag_gfw,vessel_class_gfw) %>%
+  summarize(total_effort = sum(fishing_hours) , total_vessels = length(unique(mmsi))) %>% arrange(total_effort) %>%
+  mutate(flag_gfw = factor(flag_gfw,levels=ordering$flag_gfw)) %>% mutate(vessel_class_gfw = fct_collapse(vessel_class_gfw, other = c("fishing", "pole_and_line","set_gillnets","set_longlines","squid_jigger","tuna_purse_seines"))) %>%
+  mutate(vessel_class_gfw = fct_relevel(vessel_class_gfw, "other", after = 2)) %>%
+  mutate(vessel_class_gfw = fct_recode(vessel_class_gfw,"longliners"="drifting_longlines")) 
+  
+
+
+
+effort_by_flag$iso2 <- countrycode(effort_by_flag$flag_gfw, "iso3c", "iso2c")
+
+effort_by_flag_plot <- ggplot(data=effort_by_flag, aes(x=flag_gfw, y=total_effort/1000, fill = vessel_class_gfw )) +
+  geom_bar(stat="identity", position='stack')+ ylab('Total fishing effort (thousands of hours)') + xlab('Flag state') + labs(fill='Fishing type') + theme_classic() + theme(panel.border = element_blank(),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.text=element_text(size=12),axis.title=element_text(size=14)) + geom_flag(y = -15, aes(image = iso2)) + coord_flip()  + expand_limits(y = -100) + scale_fill_viridis(discrete = T) + scale_y_continuous(limits = c(-20,400))
+effort_by_flag_plot
+
+
+
+effort_by_gear <- mad %>%
+   group_by(vessel_class_gfw) %>%
+   summarize(total_effort = sum(fishing_hours)) %>%
+   arrange(desc(total_effort))
+# 
+# effort_by_gear$geartype <- c('longlines','trawlers','purse seines','other')
+# 
+# effort_by_gear_plot <- ggplot(data=effort_by_gear, aes(x=vessel_class_gfw, y=total_effort/1000)) +
+#   geom_bar(stat="identity", position=position_dodge())+
+#   scale_fill_brewer(palette="Paired") + ylab('Total fishing effort (thousands of hours)') + xlab('Gear type') + theme_classic() + theme(legend.position = 'none',panel.border = element_blank(),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.text=element_text(size=12),
+#         axis.title=element_text(size=14)) 
+
+
+#require(ggpubr)
+#figure=ggarrange(effort_by_flag_plot,effort_by_gear_plot, ncol=1, nrow=1, common.legend = FALSE, labels=c('(a)','(b)'),label.x = 0.85, label.y = 0.9,font.label='plain')
+#figure
+#figure=annotate_figure(figure,bottom = text_grob("Total fishing effort (hours)", color = "black",hjust = 0.5,vjust=-1, size = 12),left = text_grob(" ", color = "black", rot = 90,size=10,vjust=2,hjust=0.4))
+```
+
+\clearpage
+
+
+```{r,eval=T,echo=F,fig.height=6.5,fig.cap='(a) Total fishing effort within the Madagascar EEZ per day. (b) Cumulative number of vessels observed within the Madagascar EEZ per day. (c) Standardized fishing effort which is the total fishing effort (in hours) divided by the cumulative number of vessels observed. Effort from 2012 not shown due to low number of vessels recorded.\\label{fig:temporal}'}
+temporal <- read.csv(file='cleaned_data/Madagascar_GFW_by_day_standardized.csv',header=T)
+temporal$date = as.Date(temporal$date)
+temporal <- temporal[temporal$year>2012,]
+
+par(mfrow=c(3,1),mar=c(0.5,4,0.5,0.5),oma=c(4,1,0.5,0.5))
+plot(temporal$date,temporal$total_fishing_hours,type='o',ylab='Total fishing effort (hours)',xlab='Date',las=1,xaxt='n',cex.lab=1.2,cex.axis=1.2)
+mtext(text = '(a)',side=3,line=-1.5,adj=0.01)
+
+#plot(temporal$date,temporal$total_vessels,type='l',ylab='Total vessels observed per day',xlab='Date',las=1,xaxt='n')
+
+plot(temporal$date,temporal$vessel_count,type='l',ylab='Cumulative number of vessels',xlab='Date',las=1,xaxt='n',cex.lab=1.2,cex.axis=1.2)
+mtext(text = '(b)',side=3,line=-1.5,adj=0.01)
+
+plot(temporal$date,temporal$total_fishing_hours/temporal$vessel_count,type='l',ylab='Standarized fishing effort',xlab='Date',las=1,cex.lab=1.2,cex.axis=1.2)
+mtext(text = '(c)',side=3,line=-1.5,adj=0.01)
+
+mtext('Date',side=1,line=2.5,cex = 1.3)
+```
+
+
+\clearpage
+
+```{r finding_best_model,eval=T,echo=F,results='asis',warning=FALSE,message=FALSE,error=FALSE,cache=TRUE}
+
+#temporal <- read.csv(file='cleaned_data/Madagascar_GFW_by_day_standardized.csv')
+mad <- read.table(file='cleaned_data/Madagascar_GFW_fishing_effort.csv',header=T,row.names = NULL,sep=';')
+
+consistent_vessels <- mad %>%
+  select(mmsi,starts_with('fishing_hours_')) %>%
+  gather(Year,Effort,fishing_hours_2012:fishing_hours_2020) %>%
+  group_by(mmsi,Year) %>%
+  slice_head(n=1) %>%
+  mutate(Effort = ifelse(is.na(Effort),0,1)) %>%
+  group_by(mmsi) %>%
+  summarize(total_years = sum(Effort)) %>%
+  arrange(desc(total_years)) %>%
+  filter(total_years==9)
+
+temporal <- mad %>%
+  filter(mmsi %in% consistent_vessels$mmsi) %>%
+  group_by(date) %>%
+  summarize(total_fishing_hours = sum(fishing_hours), total_vessels = length(unique(mmsi))) %>%
+  mutate(date = as.Date(date)) %>%
+  mutate(year = as.numeric(format(date,"%Y")),month = as.numeric(format(date,"%m")),julian = as.numeric(format(date,"%j"))) %>%
+  mutate(sin = sin(2*pi*julian/365),cos = cos(2*pi*julian/365)) %>%
+  select(date,year,month,julian,total_fishing_hours,total_vessels,sin,cos)
+
+vessel_dates <- mad %>%
+  mutate(date=as.Date(date)) %>%
+  group_by(mmsi) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(date,mmsi) %>%
+  arrange(date) %>%
+  mutate(vessel_count = 1:n()) %>%
+  select(date,vessel_count) %>%
+  group_by(date) %>%
+  slice_tail(n=1) %>%
+  ungroup() %>%
+  complete(date = seq.Date(min(date), as.Date("2020-12-31"), by="day"),fill = list(vessel_count = NA)) %>%
+  fill(vessel_count)
+
+temporal <- left_join(temporal,vessel_dates)
+
+
+temporal <- temporal %>%
+  filter(year < 2020)
+
+combined <- left_join(temporal, read.csv(file='cleaned_data/dipole_index.csv'))
+
+combined <- left_join(combined, read.csv(file='cleaned_data/oil_prices.csv'))
+
+combined <- left_join(combined, read.csv(file='cleaned_data/extreme_weather_events.csv'))
+
+fish_price_long <- read.csv(file='cleaned_data/fish_prices.csv')
+fish_price_long <- fish_price_long %>%
+  filter(Commodity.Name=='Fish') %>%
+  select(year,month,fish_price_USD)
+
+combined <- left_join(combined, fish_price_long)
+
+combined$CPUE <- combined$total_fishing_hours/combined$vessel_count
+
+require(MuMIn)
+options(na.action = "na.fail")
+mymod <- glm(formula = total_fishing_hours ~ sin + cos + year + total_events + dipole_index + oil_price_USD + fish_price_USD,family='gaussian',data=combined)
+all_models <- dredge(mymod,rank="AIC",subset=(sin | !cos) && (!cos | sin))
+
+#subset(best, delta < 2)
+#par(mar = c(3,5,6,4))
+#plot(best, labAsExpr = TRUE)
+library("texreg")
+texreg(model.avg(all_models, subset = delta < 2), table = TRUE, use.packages = FALSE, digits=3,custom.coef.map = list("(Intercept)" = "(Intercept)","sin"="sine","cos"="cosine","year"="year","dipole_index"="Dipole index","fish_price_USD"="Fish price index (USD)","oil_price_USD"="Oil price (USD)","total_events"="Cyclone event"),caption='Model estimates (and standard errors) for the average of the best fitting models (AIC < 2) using a GLM framework with a Gaussian error structure. Fishing effort (from 2012-2019) is the total daily fishing effort within the Madagascar EEZ for only the vessels seen during all nine years of the data set (n = 51). Sine and cosine terms denote seasonal variables as a function of the julian day of the year.',label= "tab:best_fit_model",caption.above = TRUE,custom.model.names = 'Fishing effort')
+
+```
+
+\clearpage
+
+```{r,out.width="98%",fig.cap = 'Total fishing effort (in hours) across the entire Madagascar EEZ from 2012-2020 with darker areas indicated more effort and lines denoting marine protected areas.\\label{fig:spatial}'}
+# This plot was built in ArcGIS originally
+knitr::include_graphics("figures/all_years_effort_v2_with_scale.jpg")
+#plot(0,type='n',axes=FALSE,ann=FALSE)
+```
+
+\clearpage
+
+
+```{r,out.width="98%",fig.cap = '(larger map) Total fishing effort from 2012-2020 with darker areas indicated more effort and lines denoting marine protected areas. (smaller maps) Fishing vessel movement in two marine protected areas: Barren Islands and Ambodivahibe. \\label{fig:mpas}'}
+# This plot was built in ArcGIS originally
+knitr::include_graphics("figures/all_years_fishing_intensity_select_MPAs.jpg")
+#plot(0,type='n',axes=FALSE,ann=FALSE)
+```
+
+
+
+\clearpage
+
+# Results text
+
+
+## Temporal dynamics
+
+Between 2012-2020, there were `r comma(sum(mad$fishing_hours))` documented hours of fishing within the Madagascar EEZ. This does not include all industrial fishing efforts as vessels were added to the database during the course of the study and some vessels were likely not included. In total, there were `r length(unique(mad$mmsi))` vessels recorded fishing from a total of `r length(table(mad$flag_gfw))` different countries (Fig. \ref{fig:flagstate}). Taiwan accounted for `r round(100*effort_by_flag$total_effort[effort_by_flag$flag_gfw=='TWN']/sum(effort_by_flag$total_effort),1)` percent of all fishing effort, with other distant water fishing nations (France, Japan, China, Korea, Malaysia, and Spain), constituting the bulk of other longlining activity (Fig. \ref{fig:flagstate}). Madagascar accounted for `r round(100*sum(effort_by_flag$total_effort[effort_by_flag$flag_gfw=='MDG'])/sum(effort_by_flag$total_effort),1)` percent of all fishing effort, led by shrimp trawlers, which were first recorded in 2018. Greece vessels were the only other major source of trawling within the EEZ (Fig. \ref{fig:flagstate}).
+
+
+The vast majority of fishing activity was drifting longlines (`r round(100*effort_by_gear$total_effort[effort_by_gear$vessel_class_gfw=='drifting_longlines']/sum(effort_by_gear$total_effort),1)`%) and trawlers (`r round(100*effort_by_gear$total_effort[effort_by_gear$vessel_class_gfw=='trawlers']/sum(effort_by_gear$total_effort),1)`%) with vessels mostly in the 25-30 meter and 50-150 tonnage range (Figs. \ref{fig:flagstate}, \ref{fig:vessel_characteristics}). Fishing effort was highly seasonal and peaks between November-January each year (Fig. \ref{fig:temporal}). When standardized by cumulative number of vessels recorded, fishing effort was similar between years (Fig. \ref{fig:temporal}). Thus, given the nature of the data, it is not possible to determine if the total fishing effort is truly changing over time or if it is actually the number of vessels included in the data (Fig. \ref{fig:temporal}). 
+
+### Temporal covariates
+
+In addition to being highly seasonal, fishing effort was also strongly correlated with a number of economic and environmental covariates (Table \ref{tab:best_fit_model}). We found that fishing effort was higher with a positive dipole index, indicating more fishing during periods of warmer waters, increased wind speeds and increased precipitation (Table \ref{tab:best_fit_model}, Figs. \ref{fig:dipole_time}). Fishing effort was not strongly correlated with the presence of cyclone events (Table \ref{tab:best_fit_model}, Figs. \ref{fig:dipole_time},\ref{fig:cyclone_time}). In addition, fishing effort increased with higher fish prices (Table \ref{tab:best_fit_model}, Fig. \ref{fig:fish_time}). Conversely, fishing effort was not strongly correlated with global oil prices (Table \ref{tab:best_fit_model}, Fig. \ref{fig:oil_time}).
+
+## Spatial dynamics
+
+The exact distribution of fishing effort changed over time, but fishing was generally concentrated on the east coast, south of the island, and on the western coast between Morondava and Mahajanga (Fig. \ref{fig:spatial}). Most of the 2012-2020 fishing effort (82.4% ) was 12 nautical miles (22.2 km) or more from shore, however, 17.6% of the fishing effort was closer to shore (Figs. \ref{fig:spatial},\ref{fig:mpas}). This accounts for approximately 170,726 total hours of fishing during the course of the study or 52.7 hours of fishing effort per day. In addition to fishing effort nearshore, we also documented fishing vessels fishing within marine protected areas (Fig. \ref{fig:mpas}). As a pair of case studies, we chose two marine protected areas, Barren Isles Archipelago and Ambodivahibe. Barren Isles is a the largest marine and coastal protected area and was given temporary status in 2014, and official status in 2017. Our analysis found that between 2013-2020, multiple trawling vessels flagged to Greece operated in the Barren Isles MPA. The Ambodivahibe protected area was first established in 2009 and includes an area of 465.62 km².  Drifting longline and purse seiners vessels from Seychelles, France and Reunion were observed in this area between 2013-2020. It should be noted that other protected areas had similar incursions such as the Baie de Baly, Mahavavy Kinkony, and Ankivonjy. 
+
+
+
+# Important data points used throughout paper
+
+```{r, fig.width=8,fig.cap = 'Total fishing effort (in hours) for the entire Madagascar EEZ from 2012-2016 by (a) flag state and (b) gear type. \\label{fig:flagstate}'}
+temporal <- read.csv(file='cleaned_data/Madagascar_GFW_by_day_standardized.csv',header=T)
+
+temporal_by_month <- temporal %>%
+  group_by(month) %>%
+  summarize(total_effort = sum(total_fishing_hours))
+
+```
+
+
+- Total number of vessels: `r length(unique(mad$mmsi))`  
+- Total number of countries fishing in Madagascar's EEZ: `r length(unique(mad$flag_gfw)) - sum(is.na(unique(mad$flag_gfw)))`  
+- Although fishing effort was noted year-round, approximately `r 100*round(sum(temporal_by_month$total_effort[temporal_by_month$month <3 | temporal_by_month$month > 9])/sum(temporal_by_month$total_effort),2)`% of fishing activity occurred between the months of October and February.  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+\clearpage
+
+\begin{center}
+\textbf{\Large Supplemental Material: Distant water industrial fishing in developing countries: A case study of Madagascar}
+\vspace{5 mm}
+	
+\textsc{Easton R. White$^{1,2,*}$, Merrill Baker-Médard$^3$, Valeriia Vakhitova$^3$, Samantha Farquhar$^4$, Tendro Tondrasoa Ramaharitra$^5$}
+\vspace{3 mm}
+
+\small{$^1$Department of Biological Sciences, University of New Hampshire, Durham, New Hampshire, USA \\
+$^2$Gund Institute for Environment, University of Vermont, Burlington, Vermont, USA \\
+$^3$Environmental Studies Program, Middlebury College, Middlebury, Vermont, USA \\
+$^4$Integrated Coastal Sciences, East Carolina University, Greenville, North Carolina, USA \\
+$^5$Department of Natural Science, State College of Florida Manatee-Sarasota, Bradenton, Florida, USA
+}
+
+
+$\text{*}$ Corresponding author: Easton.White@unh.edu
+\end{center}
+
+\vspace{3 mm}
+
+\renewcommand{\thepage}{S\arabic{page}} 
+\renewcommand{\thesection}{S\arabic{section}}  
+\renewcommand{\thetable}{S\arabic{table}}  
+\renewcommand{\thefigure}{S\arabic{figure}}
+\setcounter{table}{0}
+\setcounter{figure}{0}
+\setcounter{section}{0}
+\setcounter{page}{0}
+
+# Vessel characteristics
+
+```{r, fig.cap = 'Total fishing effort (hours) versus various vessel characteristics: (a) vessel length (meters), (b) vessel tonnage, and (c) engine power \\label{fig:vessel_characteristics}'}
+mad <- read.table(file='cleaned_data/Madagascar_GFW_fishing_effort.csv',header=T,row.names = NULL,sep=';')
+
+
+effort_by_length <-  mad %>%
+  group_by(length_m_inferred = cut(length_m_inferred, breaks = c(seq(0, 55, 5),Inf))) %>%
+  summarize(total_effort = sum(fishing_hours))
+
+p1 <- ggplot(data=effort_by_length, aes(x=length_m_inferred, y=total_effort/sum(total_effort))) +
+  geom_bar(stat="identity", position=position_dodge())+
+  scale_fill_brewer(palette="Paired")+
+  theme_minimal() + coord_flip() + xlab('Vessel length (meters)') + ylab('') + theme_classic() + theme(legend.position = 'none',panel.border = element_blank(),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.text=element_text(size=8),
+        axis.title=element_text(size=14)) 
+
+effort_by_tonnage <- mad %>%
+  group_by(tonnage_gt_inferred = cut(tonnage_gt_inferred , breaks = c(seq(0, 500, 50),Inf))) %>%
+  summarize(total_effort = sum(fishing_hours))
+
+p2 <- ggplot(data=effort_by_tonnage, aes(x=tonnage_gt_inferred, y=total_effort/sum(total_effort))) +
+  geom_bar(stat="identity", position=position_dodge())+
+  scale_fill_brewer(palette="Paired")+
+  theme_minimal() + coord_flip()+ xlab('Gross tonnage') + ylab('') + theme_classic() + theme(legend.position = 'none',panel.border = element_blank(),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.text=element_text(size=8),
+        axis.title=element_text(size=14)) 
+
+
+effort_by_engine_power <- mad %>%
+  group_by(engine_power_kw_inferred = cut(engine_power_kw_inferred, breaks = c(seq(0, 1000, 50),Inf))) %>%
+  summarize(total_effort = sum(fishing_hours))
+
+p3 <- ggplot(data=effort_by_engine_power, aes(x=engine_power_kw_inferred, y=total_effort/sum(total_effort))) +
+  geom_bar(stat="identity", position=position_dodge())+
+  scale_fill_brewer(palette="Paired")+
+  theme_minimal() + coord_flip() + xlab('Engine power (kw)')+ ylab('') + theme_classic() + theme(legend.position = 'none',panel.border = element_blank(),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.text=element_text(size=8),
+        axis.title=element_text(size=14)) 
+
+
+require(ggpubr)
+figure=ggarrange(p1,p2,p3, ncol=3, nrow=1, common.legend = FALSE, labels=c('(a)','(b)','(c)'),label.x = 0.8, label.y = 0.95,font.label='plain')
+figure=annotate_figure(figure,bottom = text_grob("Fraction of total fishing effort", color = "black",hjust = 0.5,vjust=-1, size = 12),left = text_grob(" ", color = "black", rot = 90,size=10,vjust=2,hjust=0.4))
+
+figure
+```
+
+
+
+```{r, fig.cap = 'Total fishing effort (hours) for each country over time. \\label{fig:effort_by_country_and_year}'}
+mad <- read.table(file='cleaned_data/Madagascar_GFW_fishing_effort.csv',header=T,row.names = NULL,sep=';')
+
+effort_by_flag <- mad %>%
+  mutate(year = format(as.Date(date),'%Y')) %>%
+  filter(is.na(flag_gfw)==F) %>%
+  group_by(flag_gfw,year) %>%
+  summarize(total_effort = sum(fishing_hours) , total_vessels = length(unique(mmsi))) %>% arrange(desc(total_effort))
+
+require(ggrepel)
+ggplot(effort_by_flag,aes(x=year,y=total_effort,color=as.factor(flag_gfw),group=as.factor(flag_gfw))) + geom_line() + theme_classic() + ylab('Total fishing effort (hours)') + xlab('Year') +  theme(legend.position = 'none',panel.border = element_blank(),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.text=element_text(size=12),
+        axis.title=element_text(size=14)) + scale_color_viridis(discrete=T,begin = 0.1,end=0.9,option='viridis') + geom_label_repel(data = subset(effort_by_flag, year== max(year)),aes(label = flag_gfw),nudge_x = 1,na.rm = TRUE,segment.color = NA,fill=NA,label.size = NA,box.padding = 0)
+```
+
+\clearpage
+
+# Covariates
+
+## Oil Prices
+
+```{r,echo=F,eval=T,fig.cap='(a) Global oil price (USD) over time and (b) standarized fishing effort versus the global oil price. \\label{fig:oil_time}'}
+combined$date = as.Date(combined$date)
+
+oil_time <- ggplot(data=combined, aes(x=date,y=oil_price_USD)) + geom_line(lwd=2) +  scale_x_date(date_breaks = "2 years", labels=date_format("%b-%y"),limits=as.Date(c("2013-01-01","2019-12-31")),date_minor_breaks = "1 month")  + ylab('Oil price (USD)') + xlab('Date') + theme_classic() + theme(legend.position = 'none',panel.border = element_blank(),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.text=element_text(size=10),
+        axis.title=element_text(size=14)) 
+
+oil_cov <- ggplot(data=combined, aes(x=oil_price_USD,y=total_fishing_hours)) + geom_point(alpha=0.3) + xlab('Oil price (USD)') + ylab('Total fishing effort (hours)') + theme_classic() + theme(legend.position = 'none',panel.border = element_blank(),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.text=element_text(size=10),
+        axis.title=element_text(size=14)) + geom_smooth(method='lm',color='black')
+
+figure=ggarrange(oil_time,oil_cov, ncol=2, nrow=1, common.legend = FALSE, labels=c('(a)','(b)'),label.x = 0.85, label.y = 0.9,font.label='plain')
+figure
+```
+
+\clearpage
+
+## Fish prices 
+
+```{r,echo=F,eval=T,fig.cap='(a) Fish price index (USD) over time and (b) standarized fishing effort versus the fish price index. \\label{fig:fish_time}'}
+combined$date = as.Date(combined$date)
+
+fishprice_time <- ggplot(data=combined, aes(x=date,y=fish_price_USD)) + geom_line(lwd=2) +  scale_x_date(date_breaks = "2 years", labels=date_format("%b-%y"),limits=as.Date(c("2013-01-01","2020-12-31")),date_minor_breaks = "1 month")  + ylab('Fish price index (USD)') + xlab('Date') + theme_classic() + theme(legend.position = 'none',panel.border = element_blank(),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.text=element_text(size=10),
+        axis.title=element_text(size=14)) 
+
+fishprice_cov <- ggplot(data=combined, aes(x=fish_price_USD,y=total_fishing_hours)) + geom_point(alpha=0.3) + xlab('Fish price index (USD)') + ylab('Total fishing effort (hours)') + theme_classic() + theme(legend.position = 'none',panel.border = element_blank(),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.text=element_text(size=10),
+        axis.title=element_text(size=14)) + geom_smooth(method='lm',color='black')
+
+figure=ggarrange(fishprice_time,fishprice_cov, ncol=2, nrow=1, common.legend = FALSE, labels=c('(a)','(b)'),label.x = 0.85, label.y = 0.9,font.label='plain')
+figure
+```
+
+\clearpage
+
+## Cyclone events
+
+```{r,echo=F,eval=T,fig.cap='(a) Total number of cyclone events over time and (b) standarized fishing effort versus the total number of cyclone events. \\label{fig:cyclone_time}'}
+combined$date = as.Date(combined$date)
+
+cyclone_time <- ggplot(data=combined, aes(x=date,xend=date,y=0,yend=total_events)) + geom_segment(lwd=1) +  scale_x_date(date_breaks = "2 years", labels=date_format("%b-%y"),limits=as.Date(c("2013-01-01","2020-12-31")),date_minor_breaks = "1 month")  + ylab('Total number of cyclone events') + xlab('Date') + theme_classic() + theme(legend.position = 'none',panel.border = element_blank(),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.text=element_text(size=10),
+        axis.title=element_text(size=14)) 
+
+
+cyclone_cov <- ggplot(data=combined, aes(x=as.factor(total_events),y=total_fishing_hours)) + geom_boxplot(alpha=0.3) + geom_point(alpha=0.1) + xlab('Total number of cyclone events') + ylab('Total fishing effort (hours)') + theme_classic() + theme(legend.position = 'none',panel.border = element_blank(),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.text=element_text(size=10),
+        axis.title=element_text(size=14)) + geom_smooth(method='lm',color='black')
+
+figure=ggarrange(cyclone_time,cyclone_cov, ncol=2, nrow=1, common.legend = FALSE, labels=c('(a)','(b)'),label.x = 0.85, label.y = 0.9,font.label='plain')
+figure
+```
+
+\clearpage
+
+## Dipole index
+
+```{r,echo=F,eval=T,fig.cap='(a) Dipole index over time and (b) standarized fishing effort versus the dipole index. \\label{fig:dipole_time}'}
+combined$date = as.Date(combined$date)
+
+dipole_time <- ggplot(data=combined, aes(x=date,y=dipole_index)) + geom_line(lwd=1) +  scale_x_date(date_breaks = "2 years", labels=date_format("%b-%y"),limits=as.Date(c("2013-01-01","2020-12-31")),date_minor_breaks = "1 month") + ylab('Dipole index') + xlab('Date') + theme_classic() + theme(legend.position = 'none',panel.border = element_blank(),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.text=element_text(size=10),
+        axis.title=element_text(size=14)) #+  scale_color_distiller(type = 'div',palette='RdBu',na.value="lightgrey",direction=-1,limits=c(-1,1))
+
+dipole_cov <- ggplot(data=combined, aes(x=dipole_index,y=total_fishing_hours)) + geom_point(alpha=0.3) + xlab('Dipole index') + ylab('Total fishing effort (hours)') + theme_classic() + theme(legend.position = 'none',panel.border = element_blank(),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),axis.text=element_text(size=10),
+        axis.title=element_text(size=14)) + geom_smooth(method='lm',color='black')
+
+figure=ggarrange(dipole_time,dipole_cov, ncol=2, nrow=1, common.legend = FALSE, labels=c('(a)','(b)'),label.x = 0.85, label.y = 0.9,font.label='plain')
+figure
+```
+
+
+
+
+
+\clearpage
+
+
+
+# Diagnostic plots of best fitting model 
+
+```{r,echo=F,fig.cap='Diagnostic residual plots for the best fitting linear model described in the main text.\\label{fig:residuals}'}
+par(mfrow=c(2,2))
+plot(mymod)
+```
+
+
+# Alternative models
+
+In the main text, in our model selection process, we examined the total fishing effort for 2012-2019. Vessels were added to the Global Fishing Watch databases throughout the study making it difficult to evaluate which years of data to include or which vessels. Therefore, we present three additional analyses here with response variables as: fishing effort from 2017-2019, standardized fishing effort from 2017-2019, and only looking at data for vessels that were present every year. 
+
+```{r finding_best_model_recent,eval=T,echo=F,results='asis',warning=FALSE,message=FALSE,error=FALSE}
+
+#temporal <- read.csv(file='cleaned_data/Madagascar_GFW_by_day_standardized.csv')
+
+temporal <- mad %>%
+  #filter(mmsi %in% consistent_vessels$mmsi) %>%
+  group_by(date) %>%
+  summarize(total_fishing_hours = sum(fishing_hours), total_vessels = length(unique(mmsi))) %>%
+  mutate(date = as.Date(date)) %>%
+  mutate(year = as.numeric(format(date,"%Y")),month = as.numeric(format(date,"%m")),julian = as.numeric(format(date,"%j"))) %>%
+  mutate(sin = sin(2*pi*julian/365),cos = cos(2*pi*julian/365)) %>%
+  select(date,year,month,julian,total_fishing_hours,total_vessels,sin,cos)
+
+vessel_dates <- mad %>%
+  mutate(date=as.Date(date)) %>%
+  group_by(mmsi) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(date,mmsi) %>%
+  arrange(date) %>%
+  mutate(vessel_count = 1:n()) %>%
+  select(date,vessel_count) %>%
+  group_by(date) %>%
+  slice_tail(n=1) %>%
+  ungroup() %>%
+  complete(date = seq.Date(min(date), as.Date("2020-12-31"), by="day"),fill = list(vessel_count = NA)) %>%
+  fill(vessel_count)
+
+temporal <- left_join(temporal,vessel_dates)
+
+
+temporal <- temporal %>%
+  filter(year>2016, year<2020)
+
+combined <- left_join(temporal, read.csv(file='cleaned_data/dipole_index.csv'))
+
+combined <- left_join(combined, read.csv(file='cleaned_data/oil_prices.csv'))
+
+combined <- left_join(combined, read.csv(file='cleaned_data/extreme_weather_events.csv'))
+
+fish_price_long <- read.csv(file='cleaned_data/fish_prices.csv')
+fish_price_long <- fish_price_long %>%
+  filter(Commodity.Name=='Fish') %>%
+  select(year,month,fish_price_USD)
+
+combined <- left_join(combined, fish_price_long)
+
+combined$CPUE <- combined$total_fishing_hours/combined$vessel_count
+
+require(MuMIn)
+options(na.action = "na.fail")
+mymod <- glm(formula = total_fishing_hours ~ sin + cos + year + total_events + dipole_index + oil_price_USD + fish_price_USD,family='gaussian',data=combined)
+all_models <- dredge(mymod,rank="AIC",subset=(sin | !cos) && (!cos | sin))
+
+#subset(best, delta < 2)
+#par(mar = c(3,5,6,4))
+#plot(best, labAsExpr = TRUE)
+library("texreg")
+texreg(model.avg(all_models, subset = delta < 2), table = TRUE, use.packages = FALSE, digits=3,custom.coef.map = list("(Intercept)" = "(Intercept)","sin"="sine","cos"="cosine","year"="year","dipole_index"="Dipole index","fish_price_USD"="Fish price index (USD)","oil_price_USD"="Oil price (USD)","total_events"="Cyclone event"),caption='Model estimates (and standard errors) for the average of the best fitting models (AIC < 2) using a GLM framework with a Gaussian error structure. Fishing effort (from 2017-2019) is the total daily fishing effort within the Madagascar EEZ divided by the cumulative number of vessels observed. Sine and cosine terms denote seasonal variables as a function of the julian day of the year.',label= "tab:best_fit_model_recent",caption.above = TRUE,custom.model.names = 'Fishing effort')
+
+```
+
+
+```{r finding_best_model_recent_standarized,eval=T,echo=F,results='asis',warning=FALSE,message=FALSE,error=FALSE}
+
+#temporal <- read.csv(file='cleaned_data/Madagascar_GFW_by_day_standardized.csv')
+
+consistent_vessels <- mad %>%
+  select(mmsi,starts_with('fishing_hours_')) %>%
+  gather(Year,Effort,fishing_hours_2012:fishing_hours_2020) %>%
+  group_by(mmsi,Year) %>%
+  slice_head(n=1) %>%
+  mutate(Effort = ifelse(is.na(Effort),0,1)) %>%
+  group_by(mmsi) %>%
+  summarize(total_years = sum(Effort)) %>%
+  arrange(desc(total_years)) %>%
+  filter(total_years==9)
+
+temporal <- mad %>%
+  #filter(mmsi %in% consistent_vessels$mmsi) %>%
+  group_by(date) %>%
+  summarize(total_fishing_hours = sum(fishing_hours), total_vessels = length(unique(mmsi))) %>%
+  mutate(date = as.Date(date)) %>%
+  mutate(year = as.numeric(format(date,"%Y")),month = as.numeric(format(date,"%m")),julian = as.numeric(format(date,"%j"))) %>%
+  mutate(sin = sin(2*pi*julian/365),cos = cos(2*pi*julian/365)) %>%
+  select(date,year,month,julian,total_fishing_hours,total_vessels,sin,cos)
+
+vessel_dates <- mad %>%
+  mutate(date=as.Date(date)) %>%
+  group_by(mmsi) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(date,mmsi) %>%
+  arrange(date) %>%
+  mutate(vessel_count = 1:n()) %>%
+  select(date,vessel_count) %>%
+  group_by(date) %>%
+  slice_tail(n=1) %>%
+  ungroup() %>%
+  complete(date = seq.Date(min(date), as.Date("2020-12-31"), by="day"),fill = list(vessel_count = NA)) %>%
+  fill(vessel_count)
+
+temporal <- left_join(temporal,vessel_dates)
+
+
+temporal <- temporal %>%
+  filter(year>2016, year<2020)
+
+combined <- left_join(temporal, read.csv(file='cleaned_data/dipole_index.csv'))
+
+combined <- left_join(combined, read.csv(file='cleaned_data/oil_prices.csv'))
+
+combined <- left_join(combined, read.csv(file='cleaned_data/extreme_weather_events.csv'))
+
+fish_price_long <- read.csv(file='cleaned_data/fish_prices.csv')
+fish_price_long <- fish_price_long %>%
+  filter(Commodity.Name=='Fish') %>%
+  select(year,month,fish_price_USD)
+
+combined <- left_join(combined, fish_price_long)
+
+combined$CPUE <- combined$total_fishing_hours/combined$vessel_count
+
+require(MuMIn)
+options(na.action = "na.fail")
+mymod <- glm(formula = CPUE ~ sin + cos + year + total_events + dipole_index + oil_price_USD + fish_price_USD,family='gaussian',data=combined)
+all_models <- dredge(mymod,rank="AIC",subset=(sin | !cos) && (!cos | sin))
+
+#subset(best, delta < 2)
+#par(mar = c(3,5,6,4))
+#plot(best, labAsExpr = TRUE)
+library("texreg")
+texreg(model.avg(all_models, subset = delta < 2), table = TRUE, use.packages = FALSE, digits=3,custom.coef.map = list("(Intercept)" = "(Intercept)","sin"="sine","cos"="cosine","year"="year","dipole_index"="Dipole index","fish_price_USD"="Fish price index (USD)","oil_price_USD"="Oil price (USD)","total_events"="Cyclone event"),caption='Model estimates (and standard errors) for the average of the best fitting models (AIC < 2) using a GLM framework with a Gaussian error structure. Fishing effort (from 2017-2019) is the total daily fishing effort within the Madagascar EEZ divided by the cumulative number of vessels observed. Sine and cosine terms denote seasonal variables as a function of the julian day of the year.',label= "tab:best_fit_model_recent_standardized",caption.above = TRUE,custom.model.names = 'Standardized fishing effort')
+
+```
+
+
+```{r finding_best_model_all_vessels,eval=T,echo=F,results='asis',warning=FALSE,message=FALSE,error=FALSE}
+
+#temporal <- read.csv(file='cleaned_data/Madagascar_GFW_by_day_standardized.csv')
+
+consistent_vessels <- mad %>%
+  select(mmsi,starts_with('fishing_hours_')) %>%
+  gather(Year,Effort,fishing_hours_2012:fishing_hours_2020) %>%
+  group_by(mmsi,Year) %>%
+  slice_head(n=1) %>%
+  mutate(Effort = ifelse(is.na(Effort),0,1)) %>%
+  group_by(mmsi) %>%
+  summarize(total_years = sum(Effort)) %>%
+  arrange(desc(total_years)) %>%
+  filter(total_years==9)
+
+temporal <- mad %>%
+  #filter(mmsi %in% consistent_vessels$mmsi) %>%
+  group_by(date) %>%
+  summarize(total_fishing_hours = sum(fishing_hours), total_vessels = length(unique(mmsi))) %>%
+  mutate(date = as.Date(date)) %>%
+  mutate(year = as.numeric(format(date,"%Y")),month = as.numeric(format(date,"%m")),julian = as.numeric(format(date,"%j"))) %>%
+  mutate(sin = sin(2*pi*julian/365),cos = cos(2*pi*julian/365)) %>%
+  select(date,year,month,julian,total_fishing_hours,total_vessels,sin,cos)
+
+vessel_dates <- mad %>%
+  mutate(date=as.Date(date)) %>%
+  group_by(mmsi) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(date,mmsi) %>%
+  arrange(date) %>%
+  mutate(vessel_count = 1:n()) %>%
+  select(date,vessel_count) %>%
+  group_by(date) %>%
+  slice_tail(n=1) %>%
+  ungroup() %>%
+  complete(date = seq.Date(min(date), as.Date("2020-12-31"), by="day"),fill = list(vessel_count = NA)) %>%
+  fill(vessel_count)
+
+temporal <- left_join(temporal,vessel_dates)
+
+
+temporal <- temporal %>%
+  filter(year<2020)
+
+combined <- left_join(temporal, read.csv(file='cleaned_data/dipole_index.csv'))
+
+combined <- left_join(combined, read.csv(file='cleaned_data/oil_prices.csv'))
+
+combined <- left_join(combined, read.csv(file='cleaned_data/extreme_weather_events.csv'))
+
+fish_price_long <- read.csv(file='cleaned_data/fish_prices.csv')
+fish_price_long <- fish_price_long %>%
+  filter(Commodity.Name=='Fish') %>%
+  select(year,month,fish_price_USD)
+
+combined <- left_join(combined, fish_price_long)
+
+combined$CPUE <- combined$total_fishing_hours/combined$vessel_count
+
+require(MuMIn)
+options(na.action = "na.fail")
+mymod <- glm(formula = total_fishing_hours ~ sin + cos + year + total_events + dipole_index + oil_price_USD + fish_price_USD,family='gaussian',data=combined)
+all_models <- dredge(mymod,rank="AIC",subset=(sin | !cos) && (!cos | sin))
+
+#subset(best, delta < 2)
+#par(mar = c(3,5,6,4))
+#plot(best, labAsExpr = TRUE)
+library("texreg")
+texreg(all_models[1,], table = TRUE, use.packages = FALSE, digits=3,custom.coef.map = list("(Intercept)" = "(Intercept)","sin"="sine","cos"="cosine","year"="year","dipole_index"="Dipole index","fish_price_USD"="Fish price index (USD)","oil_price_USD"="Oil price (USD)","total_events"="Cyclone event"),caption='Model estimates (and standard errors) for the average of the best fitting models (AIC < 2) using a GLM framework with a Gaussian error structure. Fishing effort (from 2012-2019) is the total daily fishing effort within the Madagascar EEZ for all vessels (as opposed to only the vessels seen during all nine years of the data set used in the main manuscript). Sine and cosine terms denote seasonal variables as a function of the julian day of the year.',label= "tab:best_fit_model_recent_standardized",caption.above = TRUE,custom.model.names = 'Fishing effort')
+
+```
+
+
+
+
+\clearpage
+
+```{r,echo=F,eval=F,fig.cap='Total daily fishing effort (hours) for only the 51 vessels that were present every year from 2012 to 2019.'}
+par(mfrow=c(3,1),mar=c(0.5,4,0.5,0.5),oma=c(4,1,0.5,0.5))
+plot(temporal$date,temporal$total_fishing_hours,type='o',ylab='Total fishing effort (hours)',xlab='Date',las=1,xaxt='n',cex.lab=1.2,cex.axis=1.2)
+#mtext(text = '(a)',side=3,line=-1.5,adj=0.01)
+```
+
+
+
+
+
+\clearpage
+
+# Madagascar MPA database
+
+```{r,echo=F}
+protected_areas <- read.csv(file='cleaned_data/WDPA_MPA_database_simple.csv',header=T)
+
+#protected_areas <- protected_areas %>%
+#  mutate(Name = NAME, Designation = DESIG, 'Total Area (km2)' = REP_M_AREA.in.km2, 'Status Year' = STATUS_YR) %>%
+#  select(Name, Designation, 'Total Area (km2)', 'Status Year')
+
+
+kable(protected_areas, "latex", booktabs=T,align='l',escape=F,longtable = T,caption = "Name and year started of areas in Madagascar listed as either a MPA or LMMA\\label{tab:mpa_table}") %>%
+    kable_styling(full_width = T, position = "left",latex_options = c("HOLD_position","striped"))
+```
+
+
+
+
